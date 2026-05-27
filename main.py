@@ -10,8 +10,7 @@ app = FastAPI()
 danger_levels = {
     "others": "HIGH",
     "safe_driving": "LOW",
-    "talking_phone": "HIGH",
-    "texting_phone": "HIGH",
+    "using_phone": "HIGH",
     "turning": "MEDIUM"
 }
 
@@ -20,7 +19,7 @@ device = torch.device("cpu")
 
 # Cargar checkpoint
 checkpoint = torch.load(
-    "driver_behavior_model.pth",
+    "best_driver_behavior_model.pth",
     map_location=device
 )
 
@@ -46,7 +45,7 @@ model.eval()
 
 # Transformaciones
 transform = transforms.Compose([
-    transforms.Resize((192, 192)),
+    transforms.Resize((224, 224)),
     transforms.ToTensor(),
     transforms.Normalize(
         [0.485, 0.456, 0.406],

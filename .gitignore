@@ -1,3 +1,6 @@
 __pycache__/
 .ipynb_checkpoints/
 data/
+data_original/
+data_no_others/
+data_merged_phone/
