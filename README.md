@@ -190,8 +190,6 @@ GET /historico/{ruta}
 
 # Módulo 2: Driver Distraction Detection
 
-**Autor:** Alejandro Gómez Franco
-
 ## Dataset
 
 El proyecto utiliza el siguiente dataset de Kaggle:
@@ -249,8 +247,6 @@ El notebook realiza las siguientes etapas:
 ---
 
 # Módulo 3: Travel Recommendation System
-
-**Autor:** Alejandro Gómez Franco
 
 Sistema de recomendación de destinos de viaje basado en **Neural Collaborative Filtering (NCF)** híbrido que combina:
 
