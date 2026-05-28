@@ -210,16 +210,23 @@ class TravelRecommender:
         candidatos = np.array([i for i in range(s["n_items"]) if i not in vistos])
         scores     = self._score_hybrid(u_idx, candidatos, tipos, mes_viaje=mes_viaje)
         orden      = np.argsort(-scores)
-        top_idx    = candidatos[orden[:top_k]]
-        top_scores = scores[orden[:top_k]]
+
+        # Obtener más candidatos para compensar deduplicación por nombre
+        fetch_k = min(len(candidatos), top_k * 3)
+        top_idx    = candidatos[orden[:fetch_k]]
+        top_scores = scores[orden[:fetch_k]]
 
         dest_ids = s["dest_encoder"].inverse_transform(top_idx)
+        recommendations = self._build_recs(dest_ids, top_scores, tipos, mes_viaje=mes_viaje)
+        # Deduplicar por nombre y recortar a top_k
+        recommendations = self._deduplicate_recommendations(recommendations, top_k)
+
         return {
             "user_id":          user_id,
             "user_name":        user_row["Name"],
             "email":            user_row["Email"],
             "preferences":      user_row["Preferences"],
-            "recommendations":  self._build_recs(dest_ids, top_scores, tipos, mes_viaje=mes_viaje),
+            "recommendations":  recommendations,
         }
 
     # ─────────────────────────────────────────────────────────────────────
@@ -243,16 +250,23 @@ class TravelRecommender:
                                         feat_override=feat, alpha=0.3,
                                         mes_viaje=mes_viaje)
         orden      = np.argsort(-scores)
-        top_idx    = candidatos[orden[:top_k]]
-        top_scores = scores[orden[:top_k]]
+
+        # Obtener más candidatos para compensar deduplicación por nombre
+        fetch_k = min(len(candidatos), top_k * 3)
+        top_idx    = candidatos[orden[:fetch_k]]
+        top_scores = scores[orden[:fetch_k]]
 
         dest_ids = s["dest_encoder"].inverse_transform(top_idx)
+        recommendations = self._build_recs(dest_ids, top_scores, tipos, mes_viaje=mes_viaje)
+        # Deduplicar por nombre y recortar a top_k
+        recommendations = self._deduplicate_recommendations(recommendations, top_k)
+
         return {
             "user_id":         None,
             "user_name":       "Nuevo usuario",
             "email":           None,
             "preferences":     preferences,
-            "recommendations": self._build_recs(dest_ids, top_scores, tipos, mes_viaje=mes_viaje),
+            "recommendations": recommendations,
         }
 
     # ─────────────────────────────────────────────────────────────────────
@@ -328,6 +342,27 @@ class TravelRecommender:
 
     def preference_options(self) -> list:
         return list(PREF_TO_TYPE.keys())
+
+    # ─────────────────────────────────────────────────────────────────────
+    # Deduplicación de presentación (arregla duplicados de nombre)
+    # ─────────────────────────────────────────────────────────────────────
+    def _deduplicate_recommendations(self, recs_list: list, top_k: int) -> list:
+        """
+        Deduplica recomendaciones por nombre, conservando el representante de
+        mayor score. Orden: sort desc → drop_duplicates → head top_k.
+        """
+        if not recs_list:
+            return recs_list
+
+        import pandas as pd
+        df = pd.DataFrame(recs_list)
+        # 1) Ordenar por score descendente (mayor primero)
+        df = df.sort_values("score", ascending=False)
+        # 2) Deduplicar por nombre, conservando el PRIMERO (= mayor score)
+        df = df.drop_duplicates(subset=["name"], keep="first")
+        # 3) Recortar a top_k después de deduplicar
+        df = df.head(top_k)
+        return df.to_dict("records")
 
     # ─────────────────────────────────────────────────────────────────────
     # Helper
