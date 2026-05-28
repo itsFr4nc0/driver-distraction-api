@@ -4,3 +4,8 @@ torch
 torchvision
 pillow
 python-multipart
+joblib
+scikit-learn
+pandas
+numpy
+pydantic
