@@ -3,8 +3,16 @@ from PIL import Image
 import torch
 from torchvision import transforms, models
 import io
+from fastapi.middleware.cors import CORSMiddleware  # añadir
 
 app = FastAPI()
+
+app.add_middleware(
+      CORSMiddleware,
+      allow_origins=["https://smart-transport-ai-front.vercel.app"],
+      allow_methods=["*"],
+      allow_headers=["*"],
+  )
 
 # Niveles de peligro
 danger_levels = {
