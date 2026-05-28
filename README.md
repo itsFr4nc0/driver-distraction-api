@@ -1,15 +1,198 @@
-# Driver Distraction & Travel Recommendation API
+# API Integrada
 
-API combinada que integra dos sistemas principales:
+API combinada que integra tres sistemas principales:
 
 1. **Driver Distraction Detection** — Detección de comportamientos de conducción utilizando **Deep Learning** y **Transfer Learning** con **ResNet18**.
 2. **Travel Recommendation System** — Sistema de recomendación de destinos de viaje basado en **Neural Collaborative Filtering (NCF)** híbrido.
+3. **Transport Demand Prediction** — Predicción de demanda de pasajeros por ruta para los próximos 30 días usando redes **LSTM**.
 
-El proyecto permite entrenar modelos de clasificación para identificar comportamientos de conducción distraída y generar recomendaciones personalizadas de destinos, exponiendo ambos mediante una API construida con **FastAPI**.
+El proyecto permite entrenar modelos de clasificación para identificar comportamientos de conducción distraída, generar recomendaciones personalizadas de destinos, y predecir la demanda de transporte, exponiendo los tres módulos mediante APIs construidas con **FastAPI**.
 
 ---
 
-# Dataset
+# Módulo 1: Predicción de Demanda de Transporte (Series de Tiempo)
+
+## Dataset
+
+Se utilizó el **Nairobi Transport Demand Dataset** (Kaggle). Contiene 51,645 registros individuales de pasajeros de una empresa de transporte terrestre en Kenia, cubriendo el período octubre 2017 — abril 2018 en 17 rutas de origen.
+
+Las rutas fueron agrupadas en 4 series temporales para el modelado:
+
+| Ruta | Descripción |
+|---|---|
+| Kisii | Ruta de mayor volumen histórico, con quiebre estructural en marzo 2018 |
+| Migori | Serie más estable, mejor desempeño del modelo |
+| Homa Bay | Serie con eventos atípicos (Semana Santa) |
+| Otras Rutas | Agregado de las 14 rutas restantes |
+
+## Tecnologías utilizadas
+
+- Python 3.12
+- TensorFlow / Keras
+- Scikit-learn
+- Pandas / NumPy
+- Matplotlib / Statsmodels
+- FastAPI / Uvicorn
+
+## Estructura del módulo
+
+```text
+modulo1_prediccion_demanda/
+│
+├── main.py                         # Punto de entrada del módulo
+├── requirements.txt                # Dependencias del módulo
+│
+├── data/
+│   ├── raw/
+│   │   └── train_revised.csv       # Dataset original de Nairobi
+│   └── processed/
+│       ├── demanda_diaria.csv      # Demanda agregada por día y ruta
+│       ├── demanda_continua.csv
+│       └── demanda_semanal.csv
+│
+├── models/                         # Modelos LSTM entrenados (.keras)
+│
+├── notebooks/
+│   ├── 01_eda.ipynb                # Análisis exploratorio de datos
+│   ├── 03_modelo_regresion.ipynb   # Modelo de regresión base
+│   └── 05_modelo_lstm.ipynb        # Modelo LSTM principal
+│
+├── reports/
+│   ├── predicciones_30_dias.csv    # Predicciones futuras por ruta
+│   ├── metricas_evaluacion.json    # Métricas finales del modelo
+│   └── figures/                   # Gráficas generadas
+│       ├── 01_series_historicas.png
+│       ├── 02_pred_vs_real_*.png
+│       ├── 03_prediccion_futura_*.png
+│       ├── 05_descomposicion_*.png
+│       ├── 06_demanda_dia_semana.png
+│       └── 07_tabla_metricas.png
+│
+└── src/
+    ├── preprocessing.py            # Carga, limpieza y preparación de datos
+    ├── model.py                    # Arquitectura del modelo LSTM
+    ├── train.py                    # Entrenamiento y evaluación
+    ├── visualization.py            # Generación de gráficas
+    ├── generar_graficas.py         # Script para regenerar todas las figuras
+    └── api.py                      # API REST del módulo
+```
+
+## Arquitectura del modelo LSTM
+
+```text
+Entrada: (lookback, 1)
+→ LSTM(64 unidades, return_sequences=True)
+→ Dropout(0.2)
+→ LSTM(32 unidades, return_sequences=False)
+→ Dropout(0.2)
+→ Dense(16, activación ReLU)
+→ Dense(1) — demanda normalizada
+```
+
+Total de parámetros: 29,857
+
+## Métricas de evaluación
+
+| Ruta | RMSE | MAE | MAPE (%) |
+|---|---|---|---|
+| Migori | 9.83 | 8.11 | 17.58 |
+| Kisii | 11.74 | 8.85 | 42.42 |
+| Homa Bay | 29.60 | 24.96 | 271.53* |
+| Otras Rutas | 64.65 | 56.17 | 24.89 |
+
+> *El MAPE elevado en Homa Bay se debe a días con demanda cero durante Semana Santa (1-4 abril 2018). El RMSE y MAE son las métricas representativas para esta ruta.
+
+## Instalación y ejecución del módulo
+
+Desde la raíz del repositorio:
+
+```bash
+cd modulo1_prediccion_demanda
+pip install -r requirements.txt
+```
+
+Ejecutar el preprocesamiento:
+
+```bash
+python src/preprocessing.py
+```
+
+Entrenar los modelos:
+
+```bash
+python src/train.py
+```
+
+Regenerar gráficas:
+
+```bash
+python src/generar_graficas.py
+```
+
+Ejecutar la API del módulo:
+
+```bash
+uvicorn src.api:app --reload --port 8001
+```
+
+## Endpoints del módulo 1
+
+### Rutas disponibles
+
+```http
+GET /rutas
+```
+
+```json
+{"rutas": ["Kisii", "Migori", "Homa Bay", "Otras Rutas"]}
+```
+
+### Predicción completa por ruta
+
+```http
+GET /prediccion-completa/{ruta}
+```
+
+Devuelve histórico de los últimos 90 días + predicción de los próximos 30 días + métricas del modelo.
+
+```json
+{
+  "ruta": "Migori",
+  "historico": [
+    {"date": "2018-01-21", "value": 45},
+    ...
+  ],
+  "prediccion": [
+    {"date": "2018-04-21", "value": 50},
+    ...
+  ],
+  "metricas": {
+    "RMSE": 9.83,
+    "MAE": 8.11,
+    "MAPE": 17.58
+  }
+}
+```
+
+### Predicción solo futura
+
+```http
+GET /prediccion/{ruta}
+```
+
+### Histórico solo
+
+```http
+GET /historico/{ruta}
+```
+
+---
+
+# Módulo 2: Driver Distraction Detection
+
+**Autor:** Alejandro Gómez Franco
+
+## Dataset
 
 El proyecto utiliza el siguiente dataset de Kaggle:
 
@@ -23,27 +206,14 @@ El dataset contiene imágenes reales de conductores en diferentes situaciones de
 - `talking_phone`
 - `others`
 
-Durante el preprocesamiento, las clases:
-
-- `texting_phone`
-- `talking_phone`
-
-son fusionadas en una sola categoría:
-
-- `using_phone`
-
-Por lo tanto, el modelo final trabaja con 4 clases:
+Durante el preprocesamiento, las clases `texting_phone` y `talking_phone` son fusionadas en `using_phone`. El modelo final trabaja con 4 clases:
 
 - `safe_driving`
 - `turning`
 - `using_phone`
 - `others`
 
----
-
-# Estructura esperada del dataset
-
-Después de descargar el dataset, se recomienda mantener la siguiente estructura de carpetas:
+## Estructura esperada del dataset
 
 ```text
 data_original/
@@ -55,14 +225,7 @@ data_original/
 └── turning/
 ```
 
-> IMPORTANTE:
->
-> El código espera que la carpeta principal del dataset se llame `data_original`.
-> Si se utiliza otro nombre, debe modificarse manualmente en el notebook.
-t
----
-
-# Tecnologías utilizadas
+## Tecnologías utilizadas
 
 - Python
 - PyTorch
@@ -70,12 +233,9 @@ t
 - FastAPI
 - Uvicorn
 - Scikit-learn
-- Matplotlib
-- Seaborn
+- Matplotlib / Seaborn
 
----
-
-# Entrenamiento del modelo
+## Entrenamiento del modelo
 
 El notebook realiza las siguientes etapas:
 
@@ -83,25 +243,29 @@ El notebook realiza las siguientes etapas:
 2. Aumento de datos (*Data Augmentation*).
 3. Transfer Learning utilizando ResNet18 preentrenado en ImageNet.
 4. Entrenamiento del modelo.
-5. Evaluación mediante:
-   - Accuracy
-   - Classification Report
-   - Confusion Matrix
-6. Guardado del mejor modelo:
-
-```text
-best_driver_behavior_model.pth
-```
+5. Evaluación mediante Accuracy, Classification Report y Confusion Matrix.
+6. Guardado del mejor modelo: `artifacts/best_driver_behavior_model.pth`
 
 ---
 
-# Instalación
+# Módulo 3: Travel Recommendation System
+
+**Autor:** Alejandro Gómez Franco
+
+Sistema de recomendación de destinos de viaje basado en **Neural Collaborative Filtering (NCF)** híbrido que combina:
+
+- **Collaborative Filtering** — Basado en patrones de comportamiento de usuarios similares
+- **Content-Based Filtering** — Basado en preferencias declaradas y características del destino
+
+---
+
+# Instalación general
 
 Clonar el repositorio:
 
 ```bash
-git clone <repo-url>
-cd <repo>
+git clone https://github.com/itsFr4nc0/driver-distraction-api.git
+cd driver-distraction-api
 ```
 
 Crear entorno virtual:
@@ -112,14 +276,12 @@ python -m venv venv
 
 Activar entorno virtual:
 
-## Windows
-
+**Windows:**
 ```bash
 venv\Scripts\activate
 ```
 
-## Linux / Mac
-
+**Linux / Mac:**
 ```bash
 source venv/bin/activate
 ```
@@ -132,25 +294,17 @@ pip install -r requirements.txt
 
 ---
 
-# Ejecución de la API
-
-El proyecto utiliza FastAPI para exponer el modelo entrenado como un servicio REST.
-
-Ejecutar localmente:
+# Ejecución de la API principal
 
 ```bash
 uvicorn main:app --reload
 ```
 
-La API estará disponible en:
-
-```text
-http://127.0.0.1:8000
-```
+La API estará disponible en `http://127.0.0.1:8000`
 
 ---
 
-# Endpoints
+# Endpoints — Módulo 2: Driver Distraction
 
 ## Home
 
@@ -158,21 +312,12 @@ http://127.0.0.1:8000
 GET /
 ```
 
-### Respuesta
-
 ```json
 {
   "message": "Driver Distraction API Running",
-  "classes": [
-    "others",
-    "safe_driving",
-    "turning",
-    "using_phone"
-  ]
+  "classes": ["others", "safe_driving", "turning", "using_phone"]
 }
 ```
-
----
 
 ## Predicción de imágenes
 
@@ -180,20 +325,12 @@ GET /
 POST /predict
 ```
 
-Permite enviar una imagen y obtener la predicción del comportamiento del conductor.
-
-### Ejemplo usando cURL
-
 ```bash
 curl -X POST "http://127.0.0.1:8000/predict" \
 -H "accept: application/json" \
 -H "Content-Type: multipart/form-data" \
 -F "file=@imagen.jpg"
 ```
-
----
-
-# Respuesta esperada
 
 ```json
 {
@@ -209,11 +346,7 @@ curl -X POST "http://127.0.0.1:8000/predict" \
 }
 ```
 
----
-
-# Niveles de peligro
-
-El sistema asigna un nivel de riesgo según el comportamiento detectado:
+## Niveles de peligro
 
 | Clase | Nivel |
 |---|---|
@@ -224,11 +357,7 @@ El sistema asigna un nivel de riesgo según el comportamiento detectado:
 
 ---
 
----
-
-# Endpoints de Recomendación de Viajes
-
-La API también incluye un completo sistema de recomendación de destinos de viaje basado en **Neural Collaborative Filtering (NCF)** híbrido.
+# Endpoints — Módulo 3: Travel Recommendation
 
 ## Health Check
 
@@ -236,175 +365,33 @@ La API también incluye un completo sistema de recomendación de destinos de via
 GET /health
 ```
 
-Verifica que la API y los modelos estén operativos.
-
-### Respuesta
-
 ```json
-{
-  "status": "ok",
-  "model_ready": true,
-  "device": "cpu"
-}
+{"status": "ok", "model_ready": true, "device": "cpu"}
 ```
 
----
-
-## Catálogos
-
-### Obtener Usuarios (Paginado)
+## Obtener Usuarios
 
 ```http
 GET /users?page=1&limit=20&search=
 ```
 
-**Parámetros:**
-- `page` — Número de página (por defecto: 1)
-- `limit` — Registros por página, máx 100 (por defecto: 20)
-- `search` — Buscar por nombre o email (opcional)
-
-### Respuesta
-
-```json
-{
-  "users": [
-    {
-      "user_id": 1,
-      "name": "Kavya",
-      "email": "kavya@example.com",
-      "preferences": "Beaches, Historical",
-      "gender": "Female",
-      "n_adults": 1,
-      "n_children": 0
-    }
-  ],
-  "total": 999,
-  "page": 1,
-  "limit": 20
-}
-```
-
----
-
-### Obtener Destinos (Paginado)
+## Obtener Destinos
 
 ```http
 GET /destinations?page=1&limit=20&type=
 ```
 
-**Parámetros:**
-- `page` — Número de página (por defecto: 1)
-- `limit` — Registros por página, máx 100 (por defecto: 20)
-- `type` — Filtrar por tipo de destino: `Beach`, `Historical`, `Nature`, `Adventure`, `City` (opcional)
-
-### Respuesta
-
-```json
-{
-  "destinations": [
-    {
-      "destination_id": 1,
-      "name": "Taj Mahal",
-      "state": "Uttar Pradesh",
-      "type": "Historical",
-      "popularity": 8.69,
-      "best_time_to_visit": "Nov-Feb"
-    }
-  ],
-  "total": 1000,
-  "page": 1,
-  "limit": 20
-}
-```
-
----
-
-### Obtener Tipos de Destino
-
-```http
-GET /destination-types
-```
-
-Devuelve los tipos de destino disponibles en el sistema.
-
-### Respuesta
-
-```json
-{
-  "types": ["Adventure", "Beach", "City", "Historical", "Nature"]
-}
-```
-
----
-
-### Obtener Opciones de Preferencia
-
-```http
-GET /preference-options
-```
-
-Devuelve las preferencias válidas para el formulario de nuevo usuario.
-
-### Respuesta
-
-```json
-{
-  "preferences": ["Beaches", "Historical", "Nature", "Adventure", "City"]
-}
-```
-
----
-
-## Recomendaciones
-
-### Recomendaciones para Usuario Existente
+## Recomendaciones para Usuario Existente
 
 ```http
 GET /recommend/{user_id}?top_k=5&travel_month=
 ```
 
-Genera recomendaciones personalizadas para un usuario existente. Utiliza el modelo NCF híbrido (embeddings colaborativos + preferencias de contenido). Los destinos ya visitados se excluyen automáticamente.
-
-**Parámetros:**
-- `user_id` — ID del usuario (requerido, path parameter)
-- `top_k` — Número de recomendaciones (1-20, por defecto: 5)
-- `travel_month` — Mes de viaje (1-12) para aplicar filtro de temporada (opcional)
-
-### Respuesta
-
-```json
-{
-  "user_id": 1,
-  "user_name": "Kavya",
-  "email": "kavya@example.com",
-  "preferences": "Beaches, Historical",
-  "recommendations": [
-    {
-      "destination_id": 472,
-      "name": "Goa Beaches",
-      "state": "Goa",
-      "type": "Beach",
-      "popularity": 9.28,
-      "best_time_to_visit": "Nov-Mar",
-      "score": 0.9832,
-      "match_reason": "Coincide con tus preferencias",
-      "season_match": null
-    }
-  ]
-}
-```
-
----
-
-### Recomendaciones para Usuario Nuevo (Cold-Start)
+## Recomendaciones para Usuario Nuevo
 
 ```http
 POST /recommend/new-user
 ```
-
-Genera recomendaciones para un usuario nuevo sin historial previo. Utiliza preferencias declaradas y datos demográficos.
-
-**Body (JSON):**
 
 ```json
 {
@@ -417,96 +404,47 @@ Genera recomendaciones para un usuario nuevo sin historial previo. Utiliza prefe
 }
 ```
 
-**Parámetros:**
-- `preferences` — Preferencias separadas por coma (requerido). Valores válidos: `Beaches`, `Historical`, `Nature`, `Adventure`, `City`
-- `gender` — Género (`Male` o `Female`, por defecto: `Male`)
-- `n_adults` — Número de adultos en el grupo (1-20, por defecto: 1)
-- `n_children` — Número de niños en el grupo (0-20, por defecto: 0)
-- `top_k` — Número de recomendaciones (1-20, por defecto: 5)
-- `travel_month` — Mes de viaje (1-12) para filtro de temporada (opcional)
-
-### Respuesta
-
-```json
-{
-  "user_id": null,
-  "user_name": "Nuevo usuario",
-  "email": null,
-  "preferences": "Beaches, Adventure",
-  "recommendations": [
-    {
-      "destination_id": 472,
-      "name": "Goa Beaches",
-      "state": "Goa",
-      "type": "Beach",
-      "popularity": 9.28,
-      "best_time_to_visit": "Nov-Mar",
-      "score": 0.9608,
-      "match_reason": "Coincide con tus preferencias",
-      "season_match": null
-    }
-  ]
-}
-```
-
----
-
-### Obtener Usuarios Target para un Nuevo Destino
+## Usuarios Target para Nuevo Destino
 
 ```http
 GET /destinations/{destination_type}/target-users?top_k=10
 ```
 
-Dado el tipo de un destino nuevo, devuelve los usuarios con mayor afinidad para campañas de marketing dirigido.
-
-**Parámetros:**
-- `destination_type` — Tipo de destino (path parameter): `Beach`, `Historical`, `Nature`, `Adventure`, `City`
-- `top_k` — Número de usuarios a devolver (1-100, por defecto: 10)
-
-### Respuesta
-
-```json
-{
-  "destination_type": "Beach",
-  "target_users": [
-    {
-      "user_id": 1,
-      "name": "Kavya",
-      "email": "kavya@example.com",
-      "preferences": "Beaches, Historical",
-      "group_size": 1
-    }
-  ]
-}
-```
-
 ---
 
-# Estructura de Archivos
+# Estructura general del repositorio
 
 ```text
 driver-distraction-api/
 │
-├── artifacts/                           # Modelos entrenados
-│   ├── best_driver_behavior_model.pth   # Modelo ResNet18 para distracción
-│   ├── travel_recomendations.pth        # Modelo NCF para recomendaciones
+├── artifacts/                              # Modelos entrenados
+│   ├── best_driver_behavior_model.pth      # Módulo 2 — ResNet18
+│   ├── travel_recomendations.pth           # Módulo 3 — NCF
 │   └── travel_recomendations_state.joblib
 │
-├── main.py                              # API FastAPI principal
-├── recommender.py                       # Motor de recomendaciones
-├── requirements.txt                     # Dependencias
-├── modelo.ipynb                         # Notebook de entrenamiento (distracción)
-└── README.md                            # Este archivo
+├── main.py                                 # API FastAPI principal (módulos 2 y 3)
+├── recommender.py                          # Motor de recomendaciones
+├── requirements.txt                        # Dependencias generales
+├── modelo.ipynb                            # Notebook entrenamiento módulo 2
+├── README.md
+│
+└── modulo1_prediccion_demanda/             # Módulo 1 — Predicción de Demanda
+    ├── main.py
+    ├── requirements.txt
+    ├── data/
+    ├── models/
+    ├── notebooks/
+    ├── reports/
+    └── src/
 ```
 
 ---
 
 # Consideraciones
 
-- El modelo de distracción fue entrenado utilizando imágenes redimensionadas a `224x224`.
-- Las imágenes deben corresponder a escenarios similares al dataset original para obtener mejores resultados.
-- El modelo de distracción utiliza normalización estándar de ImageNet debido al uso de Transfer Learning con ResNet18.
-- El sistema de recomendaciones utiliza un modelo NCF híbrido que combina:
-  - **Collaborative Filtering** — Baseado en patrones de comportamiento de usuarios similares
-  - **Content-Based Filtering** — Baseado en preferencias declaradas y características del destino
-- El filtro de mes de viaje (`travel_month`) es un filtro de contenido adicional que no es parte del modelo NCF.
+- El modelo de distracción fue entrenado con imágenes redimensionadas a `224x224`.
+- Las imágenes deben corresponder a escenarios similares al dataset original.
+- El modelo de distracción utiliza normalización estándar de ImageNet.
+- El sistema de recomendaciones combina Collaborative Filtering y Content-Based Filtering.
+- El filtro de mes de viaje (`travel_month`) es un filtro de contenido adicional.
+- Los modelos `.keras` del Módulo 1 no están incluidos en el repositorio por tamaño. Para regenerarlos ejecutar `python src/train.py` desde `modulo1_prediccion_demanda/`.
